@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/build"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,23 +15,51 @@ import (
 
 // Temporary is a temporary go source tree. The path is optionally appended to go.build.Default.GOPATH.
 type Temporary struct {
-	Path   string // The path that is appended.
-	Orig   string // The original GOPATH
-	Pkg    string // The pkg directory
-	Src    string // The src directory
-	Bin    string // The bin directory
-	update bool
+	Path      string // The path that is appended.
+	Orig      string // The original GOPATH
+	Pkg       string // The pkg directory
+	Src       string // The src directory
+	Bin       string // The bin directory
+	update    bool
+	deleteDir bool
+}
+
+type SourceFile struct {
+	Src  string
+	Dest string
+}
+
+func NewTemporaryWithFiles(prefix string, files []SourceFile) (*Temporary, error) {
+	dir, err := ioutil.TempDir("", prefix)
+	if err != nil {
+		return nil, err
+	}
+	t, err := NewTemporary(dir, true)
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, err
+	}
+	t.deleteDir = true
+	for _, f := range files {
+		if err := t.CopyFile(f.Dest, f.Src); err != nil {
+			t.Reset()
+			return nil, err
+		}
+	}
+
+	return t, nil
 }
 
 // NewTemporary creates a temporary under the specified directory.
-// If updateGoPath is true, go.build.Default.GOPATH will have this path appended to it.
+// If updateGoPath is true, go.build.Default.GOPATH will have this path prefixed to it.
 func NewTemporary(dir string, updateGoPath bool) (*Temporary, error) {
 	t := &Temporary{
-		Path:   dir,
-		Pkg:    filepath.Join(dir, "pkg"),
-		Src:    filepath.Join(dir, "src"),
-		Bin:    filepath.Join(dir, "bin"),
-		update: updateGoPath,
+		Path:      dir,
+		Pkg:       filepath.Join(dir, "pkg"),
+		Src:       filepath.Join(dir, "src"),
+		Bin:       filepath.Join(dir, "bin"),
+		update:    updateGoPath,
+		deleteDir: false,
 	}
 
 	for _, d := range []string{t.Src, t.Pkg, t.Bin} {
@@ -44,7 +73,7 @@ func NewTemporary(dir string, updateGoPath bool) (*Temporary, error) {
 		if os.Getenv("GOPATH") != t.Orig {
 			return nil, fmt.Errorf("GOPATH %s doesn't match build.Default.GOPATH %s", os.Getenv("GOPATH"), t.Orig)
 		}
-		build.Default.GOPATH = build.Default.GOPATH + ":" + dir
+		build.Default.GOPATH = dir + ":" + build.Default.GOPATH
 		os.Setenv("GOPATH", build.Default.GOPATH)
 	}
 	return t, nil
@@ -100,5 +129,10 @@ func (t *Temporary) Reset() {
 	if t.update {
 		build.Default.GOPATH = t.Orig
 		os.Setenv("GOPATH", t.Orig)
+	}
+	if t.deleteDir {
+		if err := os.RemoveAll(t.Path); err != nil {
+			log.Println(err)
+		}
 	}
 }
