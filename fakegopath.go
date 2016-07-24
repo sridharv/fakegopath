@@ -25,10 +25,13 @@ type Temporary struct {
 }
 
 type SourceFile struct {
-	Src  string
-	Dest string
+	Src     string
+	Dest    string
+	Content []byte
 }
 
+// NewTemporaryWithFiles creates a temporary go source tree after copying/creating files.
+// prefix is used to create a temporary directory in which the source tree is created.
 func NewTemporaryWithFiles(prefix string, files []SourceFile) (*Temporary, error) {
 	dir, err := ioutil.TempDir("", prefix)
 	if err != nil {
@@ -41,6 +44,13 @@ func NewTemporaryWithFiles(prefix string, files []SourceFile) (*Temporary, error
 	}
 	t.deleteDir = true
 	for _, f := range files {
+		if f.Content != nil {
+			if err := t.WriteFile(f.Dest, bytes.NewBuffer(f.Content)); err != nil {
+				t.Reset()
+				return nil, err
+			}
+			continue
+		}
 		if err := t.CopyFile(f.Dest, f.Src); err != nil {
 			t.Reset()
 			return nil, err
@@ -49,6 +59,8 @@ func NewTemporaryWithFiles(prefix string, files []SourceFile) (*Temporary, error
 
 	return t, nil
 }
+
+func (t *Temporary) KeepTempDir(keep bool) { t.deleteDir = !keep }
 
 // NewTemporary creates a temporary under the specified directory.
 // If updateGoPath is true, go.build.Default.GOPATH will have this path prefixed to it.
