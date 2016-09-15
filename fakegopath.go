@@ -43,21 +43,27 @@ func NewTemporaryWithFiles(prefix string, files []SourceFile) (*Temporary, error
 		return nil, err
 	}
 	t.deleteDir = true
+	if err := t.Copy(files); err != nil {
+		t.Reset()
+		return nil, err
+	}
+	return t, nil
+}
+
+// CopyFiles copies all source files in files using t.CopyFile or t.WriteFile as needed.
+func (t *Temporary) Copy(files []SourceFile) error {
 	for _, f := range files {
 		if f.Content != nil {
 			if err := t.WriteFile(f.Dest, bytes.NewBuffer(f.Content)); err != nil {
-				t.Reset()
-				return nil, err
+				return err
 			}
 			continue
 		}
 		if err := t.CopyFile(f.Dest, f.Src); err != nil {
-			t.Reset()
-			return nil, err
+			return err
 		}
 	}
-
-	return t, nil
+	return nil
 }
 
 func (t *Temporary) KeepTempDir(keep bool) { t.deleteDir = !keep }
